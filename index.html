@@ -1,16 +1,29 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
+
+  <!-- Give the page a title -->
   <title>Ramallah Waste Containers</title>
+
+  <!-- Add a link to the Leaflet CSS library so you can reference it for styling your map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" />
+
+  <!-- Add a link to the jQuery JavaScript library so you can leverage ajax methods to load your data -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
+  <!-- All the CSS code goes inside the style tags below -->
   <style>
+    /* style the body */
     body {
       margin: 0px;
       height: 100%;
       width: 100%;
     }
+
+    /* style the map */
     #map {
       position: absolute;
       width: 100%;
@@ -21,63 +34,47 @@
 </head>
 
 <body>
+  <!-- the map -->
   <div id="map"></div>
+
+  <!-- Add a link to the Leaflet JavaScript library so you can reference it for building your map -->
   <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
+
+  <!-- Add a link to the jQuery JavaScript library so you can leverage ajax methods to load your data -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
 
+  <!-- All JavaScript goes inside the script tags below -->
   <script>
-    // Define map options
+    // define map options
     const mapOptions = {
-      zoomSnap: 0.5,  // allows fractional zooming
+      zoomSnap: 0.5,  // this allows fractional zooming
       center: [31.9045, 35.2045], // center the map on the coordinates for Ramallah
-      zoom: 17.5, // set the initial zoom level
+      zoom: 17.5, // set the initial zoom
     };
 
-    // Define the map with the options
+    // define the map with the options above
     const map = L.map("map", mapOptions);
+   
+    // add a base map to the map
+	L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+ 	 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+ 	 subdomains: 'abcd',
+  	maxZoom: 20
+	}).addTo(map);
 
-    // Add a basemap
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 20
-    }).addTo(map);
+// use jquery to load GeoJSON data
 
-    // Load and add the Ramallah zones GeoJSON data
     $.getJSON("RamallahZones.json", function(RZ) {
       L.geoJson(RZ).addTo(map);
     });
 
-    // Create a layer group for waste containers
-    let wasteContainerLayer = L.layerGroup();
-
-    // Load wasteContainer GeoJSON data
     $.getJSON("wasteContainer.json", function(WC) {
-      L.geoJson(WC, {
-        onEachFeature: function (feature, layer) {
-          layer.bindPopup("Waste Container ID: " + feature.properties.id);  // optional popup for info
-        }
-      }).addTo(wasteContainerLayer);
+      L.geoJson(WC).addTo(map);
     });
 
-    // Function to show/hide waste containers based on zoom level
-    map.on('zoomend', function() {
-      const currentZoom = map.getZoom();
-      const minZoomToShow = 16;  // Minimum zoom level to show waste containers
 
-      if (currentZoom >= minZoomToShow) {
-        map.addLayer(wasteContainerLayer);  // Show waste containers if zoom level is high enough
-      } else {
-        map.removeLayer(wasteContainerLayer);  // Hide waste containers if zoom level is too low
-      }
-    });
 
-    // Initial check to set the layer visibility when the page loads
-    if (map.getZoom() < 16) {
-      map.removeLayer(wasteContainerLayer);
-    } else {
-      map.addLayer(wasteContainerLayer);
-    }
   </script>
 </body>
+
 </html>
