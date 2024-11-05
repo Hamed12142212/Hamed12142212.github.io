@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
   <meta charset="utf-8" />
   <title>Ramallah Waste Containers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
       margin: 0px;
       height: 100%;
       width: 100%;
+      display: flex;
     }
     #map {
       position: absolute;
@@ -19,36 +19,71 @@
       top: 0px;
       bottom: 0;
     }
+    #sidebar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: white;
+      padding: 10px;
+      z-index: 1000;
+      border-radius: 5px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      display: none; /* Hide initially */
+    }
+    #chart-container {
+      width: 300px;
+      height: 300px;
+    }
+    #filterButton {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background-color: #007bff;
+      color: white;
+      padding: 5px 10px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
   </style>
 </head>
-
 <body>
   <div id="map"></div>
-  <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  
+  <!-- Sidebar for filter and chart -->
+  <div id="sidebar">
+    <label for="materialFilter">Filter by Material Type:</label>
+    <select id="materialFilter">
+      <option value="">All</option>
+    </select>
+    <div id="chart-container">
+      <canvas id="materialChart"></canvas>
+    </div>
+  </div>
 
+  <!-- Filter button to toggle the sidebar -->
+  <button id="filterButton">Filter & Stats</button>
+
+  <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
   <script>
-    // Define map options
     const mapOptions = {
       zoomSnap: 0.5,
       center: [31.9045, 35.2045],
       zoom: 17.5
     };
 
-    // Define the map with options above
     const map = L.map("map", mapOptions);
 
-    // Add a base map to the map
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      attribution: '&copy; OpenStreetMap & CARTO contributors',
       subdomains: 'abcd',
       maxZoom: 20
     }).addTo(map);
 
-    // Define layers for control
-    let zonesLayer, wasteContainersLayer;
+    let zonesLayer, wasteContainersLayer, wasteContainersData;
 
-    // Load GeoJSON data for Zones and define onEachFeature event
+    // Load Zones Layer
     $.getJSON("RamallahZones.json", function(RZ) {
       zonesLayer = L.geoJson(RZ, {
         style: function(feature) {
@@ -68,8 +103,9 @@
       }).addTo(map);
     });
 
-    // Load GeoJSON data for Waste Containers and add onEachFeature functionality
+    // Load Waste Containers Layer
     $.getJSON("wasteContainer.json", function(WC) {
+      wasteContainersData = WC.features;
       wasteContainersLayer = L.geoJson(WC, {
         pointToLayer: function(feature, latlng) {
           return L.circleMarker(latlng, {
@@ -87,17 +123,98 @@
           });
         }
       }).addTo(map);
+      populateMaterialFilter();
+      createChart();
     });
 
-    // Add layers to map with control options
-    const baseLayers = {};
+    // Add layers control
     const overlays = {
       "Zones": zonesLayer,
       "Waste Containers": wasteContainersLayer
     };
+    L.control.layers({}, overlays).addTo(map);
 
-    // Add layer control to the map
-    L.control.layers(baseLayers, overlays).addTo(map);</script>
+    // Function to populate material types in the filter dropdown
+    function populateMaterialFilter() {
+      const materialSet = new Set(wasteContainersData.map(w => w.properties.TYPE_OF_WA));
+      const materialFilter = document.getElementById("materialFilter");
+
+      materialSet.forEach(material => {
+        const option = document.createElement("option");
+        option.value = material;
+        option.textContent = material;
+        materialFilter.appendChild(option);
+      });
+
+      materialFilter.addEventListener("change", filterWasteContainers);
+    }
+
+    // Function to filter waste containers by selected material
+    function filterWasteContainers() {
+      const selectedMaterial = document.getElementById("materialFilter").value;
+
+      if (wasteContainersLayer) {
+        map.removeLayer(wasteContainersLayer);
+      }
+
+      const filteredData = selectedMaterial
+        ? wasteContainersData.filter(w => w.properties.TYPE_OF_WA === selectedMaterial)
+        : wasteContainersData;
+
+      wasteContainersLayer = L.geoJson({ type: "FeatureCollection", features: filteredData }, {
+        pointToLayer: function(feature, latlng) {
+          return L.circleMarker(latlng, {
+            radius: 5,
+            fillColor: "orange",
+            color: "orange",
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.8
+          });
+        }
+      }).addTo(map);
+
+      updateChart(filteredData);
+    }
+
+    // Initialize the chart
+    let materialChart;
+    function createChart() {
+      const ctx = document.getElementById("materialChart").getContext("2d");
+      materialChart = new Chart(ctx, {
+        type: "pie",
+        data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: "top" } },
+        }
+      });
+      updateChart(wasteContainersData);
+    }
+
+    // Update chart data
+    function updateChart(data) {
+      const counts = {};
+      data.forEach(w => {
+        const type = w.properties.TYPE_OF_WA;
+        counts[type] = (counts[type] || 0) + 1;
+      });
+
+      const labels = Object.keys(counts);
+      const chartData = Object.values(counts);
+      const colors = labels.map(() => '#' + Math.floor(Math.random()*16777215).toString(16));
+
+      materialChart.data.labels = labels;
+      materialChart.data.datasets[0].data = chartData;
+      materialChart.data.datasets[0].backgroundColor = colors;
+      materialChart.update();
+    }
+
+    // Toggle sidebar visibility
+    document.getElementById("filterButton").addEventListener("click", function() {
+      const sidebar = document.getElementById("sidebar");
+      sidebar.style.display = sidebar.style.display === "none" ? "block" : "none";
+    });
+  </script>
 </body>
-
 </html>
