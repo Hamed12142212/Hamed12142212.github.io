@@ -1,71 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <title>Ramallah Waste Containers</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script> <!-- Include Turf.js -->
   <style>
     body {
       margin: 0px;
       height: 100%;
       width: 100%;
-      display: flex;
     }
+
     #map {
       position: absolute;
       width: 100%;
-      height: 100%;
-      z-index: 0; /* Ensure map is underneath the sidebar */
+      top: 0px;
+      bottom: 0;
     }
-    #sidebar {
-      position: absolute;
-      top: 10px;
-      right: 10px; /* Move sidebar to the top right */
-      background-color: white;
-      padding: 10px;
-      z-index: 1000;
-      border-radius: 5px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-      display: none; /* Hide initially */
+
+    .leaflet-top.leaflet-right {
+      margin-top: 10px;
+      margin-right: 10px;
     }
-    #chart-container {
-      width: 300px;
-      height: 300px;
-    }
-    #filterButton {
-      position: absolute;
-      top: 10px;
-      right: 10px; /* Move button to top right next to sidebar */
-      z-index: 1000;
-      background-color: #007bff;
-      color: white;
-      padding: 5px 10px;
-      border: none;
-      border-radius: 5px;
+
+    .clear-btn,
+    .stats-btn,
+    .select-by-material-btn,
+    .download-btn,
+    .buffer-btn,
+    .select-within-buffer-btn,
+    .remove-buffers-btn {
+      background: white;
+      padding: 6px;
+      font-size: 14px;
       cursor: pointer;
+      border: 2px solid #ddd;
+      border-radius: 4px;
+      box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.3);
+      margin: 4px;
+      display: block;
+    }
+
+    .selection-rectangle {
+      border: 2px dashed blue;
+      background: rgba(0, 0, 255, 0.2);
+      position: absolute;
+      pointer-events: none;
     }
   </style>
 </head>
+
+
 <body>
   <div id="map"></div>
-  
-  <!-- Sidebar for filter and chart -->
-  <div id="sidebar">
-    <label for="materialFilter">Filter by Material Type:</label>
-    <select id="materialFilter">
-      <option value="">All</option>
-    </select>
-    <div id="chart-container">
-      <canvas id="materialChart"></canvas>
-    </div>
-  </div>
-
-  <!-- Filter button to toggle the sidebar -->
-  <button id="filterButton">Filter & Stats</button>
-
   <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
   <script>
     const mapOptions = {
       zoomSnap: 0.5,
@@ -76,145 +69,380 @@
     const map = L.map("map", mapOptions);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap & CARTO contributors',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       subdomains: 'abcd',
       maxZoom: 20
     }).addTo(map);
 
-    let zonesLayer, wasteContainersLayer, wasteContainersData;
+    let zonesLayer, wasteContainersLayer;
+    let selectedFeatures = [];
+    let drawnRectangle;
+    let isDrawing = false;
+    let ctrlPressed = false;
+    let startLatLng;
+    let bufferLayers = L.featureGroup().addTo(map); // Group to hold buffer layers
 
-    // Load Zones Layer
-    $.getJSON("RamallahZones.json", function(RZ) {
-      zonesLayer = L.geoJson(RZ, {
-        style: function(feature) {
-          return {
-            fillColor: "yellow",
-            fillOpacity: 0.3,
-            color: "yellow",
-            weight: 1.0,
-            opacity: 0.7
-          };
-        },
-        onEachFeature: function(feature, layer) {
-          layer.on('click', function(e) {
-            alert("Zone: " + feature.properties.NAME_ENGLI + "\nMAIL_CODE: " + feature.properties.MAIL_CODE);
-          });
-        }
-      }).addTo(map);
-    });
-
-    // Load Waste Containers Layer
-    $.getJSON("wasteContainer.json", function(WC) {
-      wasteContainersData = WC.features;
-      wasteContainersLayer = L.geoJson(WC, {
-        pointToLayer: function(feature, latlng) {
-          return L.circleMarker(latlng, {
-            radius: 5,
-            fillColor: "orange",
-            color: "orange",
-            weight: 1,
-            opacity: 1,
-            fillOpacity: 0.8
-          });
-        },
-        onEachFeature: function(feature, layer) {
-          layer.on('click', function(e) {
-            alert("Material: " + feature.properties.TYPE_OF_WA);
-          });
-        }
-      }).addTo(map);
-      populateMaterialFilter();
-      createChart();
-    });
-
-    // Add layers control
-    const overlays = {
-      "Zones": zonesLayer,
-      "Waste Containers": wasteContainersLayer
-    };
-    L.control.layers({}, overlays).addTo(map);
-
-    // Function to populate material types in the filter dropdown
-    function populateMaterialFilter() {
-      const materialSet = new Set(wasteContainersData.map(w => w.properties.TYPE_OF_WA));
-      const materialFilter = document.getElementById("materialFilter");
-
-      materialSet.forEach(material => {
-        const option = document.createElement("option");
-        option.value = material;
-        option.textContent = material;
-        materialFilter.appendChild(option);
-      });
-
-      materialFilter.addEventListener("change", filterWasteContainers);
-    }
-
-    // Function to filter waste containers by selected material
-    function filterWasteContainers() {
-      const selectedMaterial = document.getElementById("materialFilter").value;
-
-      if (wasteContainersLayer) {
-        map.removeLayer(wasteContainersLayer);
+    function highlightFeature(layer) {
+      if (!selectedFeatures.includes(layer)) {
+        layer.setStyle({
+          fillColor: "blue",
+          color: "blue",
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
+        });
+        selectedFeatures.push(layer);
       }
+    }
 
-      const filteredData = selectedMaterial
-        ? wasteContainersData.filter(w => w.properties.TYPE_OF_WA === selectedMaterial)
-        : wasteContainersData;
+    function resetStyle(layer) {
+      if (zonesLayer && zonesLayer.hasLayer(layer)) {
+        layer.setStyle({
+          fillColor: "yellow",
+          color: "yellow",
+          weight: 1.0,
+          opacity: 0.7,
+          fillOpacity: 0.3
+        });
+      } else if (wasteContainersLayer && wasteContainersLayer.hasLayer(layer)) {
+        layer.setStyle({
+          fillColor: "orange",
+          color: "orange",
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 0.8
+        });
+      }
+    }
 
-      wasteContainersLayer = L.geoJson({ type: "FeatureCollection", features: filteredData }, {
-        pointToLayer: function(feature, latlng) {
-          return L.circleMarker(latlng, {
-            radius: 5,
-            fillColor: "orange",
-            color: "orange",
-            weight: 1,
-            opacity: 1,
-            fillOpacity: 0.8
+    // Clear Selection Button
+    L.Control.ClearControl = L.Control.extend({
+      onAdd: function () {
+        const button = L.DomUtil.create("div", "clear-btn");
+        button.innerHTML = "Clear Selection";
+        button.onclick = function () {
+          selectedFeatures.forEach(resetStyle);
+          selectedFeatures = [];
+          map.closePopup();
+          if (drawnRectangle) {
+            map.removeLayer(drawnRectangle);
+            drawnRectangle = null;
+          }
+        };
+        return button;
+      }
+    });
+
+    // Statistics Button
+    L.Control.StatsControl = L.Control.extend({
+      onAdd: function () {
+        const button = L.DomUtil.create("div", "stats-btn");
+        button.innerHTML = "Show Statistics";
+        button.onclick = function () {
+          if (selectedFeatures.length > 0) {
+            const zoneCount = selectedFeatures.filter(layer => zonesLayer.hasLayer(layer)).length;
+            const wasteContainerCount = selectedFeatures.filter(layer => wasteContainersLayer.hasLayer(layer)).length;
+            alert(`Statistics:\n- Zones Selected: ${zoneCount}\n- Waste Containers Selected: ${wasteContainerCount}`);
+          } else {
+            alert("No features selected!");
+          }
+        };
+        return button;
+      }
+    });
+
+    // Select Waste Containers by Material Button
+    L.Control.SelectByMaterialControl = L.Control.extend({
+      onAdd: function () {
+        const button = L.DomUtil.create("div", "select-by-material-btn");
+        button.innerHTML = "Select by Material";
+        button.onclick = function () {
+          const material = prompt("Enter the material type to select:");
+          if (material) {
+            wasteContainersLayer.eachLayer(function (layer) {
+              if (layer.feature && layer.feature.properties.TYPE_OF_WA === material) {
+                highlightFeature(layer);
+              }
+            });
+          }
+        };
+        return button;
+      }
+    });
+
+    // Download Selected Features Button
+    L.Control.DownloadControl = L.Control.extend({
+      onAdd: function () {
+        const button = L.DomUtil.create("div", "download-btn");
+        button.innerHTML = "Download Selected Features";
+        button.onclick = function () {
+          if (selectedFeatures.length > 0) {
+            const geojson = {
+              type: "FeatureCollection",
+              features: selectedFeatures.map(layer => layer.toGeoJSON())
+            };
+            const blob = new Blob([JSON.stringify(geojson)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'selected_features.geojson';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          } else {
+            alert("No features selected to download!");
+          }
+        };
+        return button;
+      }
+    });
+
+    // Buffer Zone Button
+    L.Control.BufferControl = L.Control.extend({
+      onAdd: function () {
+        const button = L.DomUtil.create("div", "buffer-btn");
+        button.innerHTML = "Create Buffer Zone";
+        button.onclick = function () {
+          const bufferDistance = parseFloat(prompt("Enter the buffer distance in meters:"));
+          if (!isNaN(bufferDistance) && selectedFeatures.length > 0) {
+            selectedFeatures.forEach(layer => {
+              const latlngs = layer.getLatLng ? [layer.getLatLng()] : layer.getBounds().getLatLngs();
+              const buffer = L.circle(latlngs[0], { radius: bufferDistance, color: 'blue', weight: 2 }).addTo(bufferLayers);
+            });
+          } else {
+            alert("Please select features and enter a valid distance.");
+          }
+        };
+        return button;
+      }
+    });
+
+    // Remove All Buffers Button
+    L.Control.RemoveBuffersControl = L.Control.extend({
+      onAdd: function () {
+        const button = L.DomUtil.create("div", "remove-buffers-btn");
+        button.innerHTML = "Remove All Buffers";
+        button.onclick = function () {
+          bufferLayers.clearLayers(); // Remove all buffer layers
+        };
+        return button;
+      }
+    });
+
+// Select Features Within Buffer Button
+L.Control.SelectWithinBufferControl = L.Control.extend({
+  onAdd: function () {
+    const button = L.DomUtil.create("div", "select-within-buffer-btn");
+    button.innerHTML = "Select Features Within Buffer";
+    button.onclick = function () {
+      if (bufferLayers.getLayers().length > 0) { // Check if there are any buffer layers
+        const selectedInBuffer = [];
+
+        // Loop through each buffer layer
+        bufferLayers.eachLayer(function (buffer) {
+          const bufferLatLng = buffer.getLatLng();
+          const bufferRadius = buffer.getRadius();
+          
+          // Create a GeoJSON polygon for the buffer using Turf.js
+          const bufferGeo = turf.circle([bufferLatLng.lng, bufferLatLng.lat], bufferRadius, {
+            units: 'meters'
           });
+
+          // Check zones
+          zonesLayer.eachLayer(function (zone) {
+            const zoneGeo = zone.toGeoJSON();
+            // Check if the entire zone is within the buffer using Turf.js
+            if (turf.booleanContains(bufferGeo, zoneGeo)) {
+              highlightFeature(zone);
+              selectedInBuffer.push(zone);
+            }
+          });
+
+          // Check waste containers
+          wasteContainersLayer.eachLayer(function (container) {
+            const containerGeo = container.toGeoJSON();
+            // Check if the container is within the buffer using Turf.js
+            if (turf.booleanContains(bufferGeo, containerGeo)) {
+              highlightFeature(container);
+              selectedInBuffer.push(container);
+            }
+          });
+        });
+
+        if (selectedInBuffer.length === 0) {
+          alert("No features found within the buffer!");
         }
-      }).addTo(map);
+      } else {
+        alert("Please create a buffer zone first!");
+      }
+    };
+    return button;
+  }
+});
 
-      updateChart(filteredData);
+// Add the new SelectWithinBuffer control to the map
+L.control.selectWithinBufferControl = function (opts) {
+  return new L.Control.SelectWithinBufferControl(opts);
+};
+
+
+
+
+
+
+
+    L.control.clearControl = function (opts) {
+      return new L.Control.ClearControl(opts);
+    };
+
+    L.control.statsControl = function (opts) {
+      return new L.Control.StatsControl(opts);
+    };
+
+    L.control.selectByMaterialControl = function (opts) {
+      return new L.Control.SelectByMaterialControl(opts);
+    };
+
+    L.control.downloadControl = function (opts) {
+      return new L.Control.DownloadControl(opts);
+    };
+
+    L.control.bufferControl = function (opts) {
+      return new L.Control.BufferControl(opts);
+    };
+
+    L.control.selectWithinBufferControl = function (opts) {
+      return new L.Control.SelectWithinBufferControl(opts);
+    };
+
+    L.control.removeBuffersControl = function (opts) {
+      return new L.Control.RemoveBuffersControl(opts);
+    };
+
+    let layersLoaded = 0;
+
+function checkLayersLoaded() {
+    layersLoaded++;
+    if (layersLoaded === 2) { // Change the number based on how many layers you have
+        initializeControls();
     }
+}
 
-    // Initialize the chart
-    let materialChart;
-    function createChart() {
-      const ctx = document.getElementById("materialChart").getContext("2d");
-      materialChart = new Chart(ctx, {
-        type: "pie",
-        data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
-        options: {
-          responsive: true,
-          plugins: { legend: { position: "top" } },
+// Function to initialize controls
+function initializeControls() {
+    L.control.clearControl({ position: "topright" }).addTo(map);
+    L.control.statsControl({ position: "topright" }).addTo(map);
+    L.control.selectByMaterialControl({ position: "topright" }).addTo(map);
+    L.control.downloadControl({ position: "topright" }).addTo(map);
+    L.control.bufferControl({ position: "topright" }).addTo(map);
+    L.control.selectWithinBufferControl({ position: "topright" }).addTo(map);
+    L.control.removeBuffersControl({ position: "topright" }).addTo(map); // Add the new button
+}
+
+// Load Zones GeoJSON
+$.getJSON("RamallahZones.json", function (RZ) {
+    zonesLayer = L.geoJson(RZ, {
+        style: function (feature) {
+            return {
+                fillColor: "yellow",
+                color: "yellow",
+                weight: 1.0,
+                opacity: 0.7,
+                fillOpacity: 0.3
+            };
+        },
+        onEachFeature: function (feature, layer) {
+            layer.on('click', function (e) {
+                highlightFeature(layer);
+                layer.bindPopup("Zone: " + feature.properties.NAME_ENGLI + "<br>MAIL_CODE: " + feature.properties.MAIL_CODE).openPopup();
+            });
         }
-      });
-      updateChart(wasteContainersData);
-    }
+    }).addTo(map);
+    checkLayersLoaded(); // Call here after zonesLayer is added
+});
 
-    // Update chart data
-    function updateChart(data) {
-      const counts = {};
-      data.forEach(w => {
-        const type = w.properties.TYPE_OF_WA;
-        counts[type] = (counts[type] || 0) + 1;
-      });
+// Load Waste Containers GeoJSON
+$.getJSON("wasteContainer.json", function (WC) {
+    wasteContainersLayer = L.geoJson(WC, {
+        pointToLayer: function (feature, latlng) {
+            return L.circleMarker(latlng, {
+                radius: 8,
+                fillColor: "orange",
+                color: "orange",
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+            });
+        },
+        onEachFeature: function (feature, layer) {
+            layer.on('click', function (e) {
+                highlightFeature(layer);
+                layer.bindPopup("Container Type: " + feature.properties.TYPE_OF_WA).openPopup();
+            });
+        }
+    }).addTo(map);
+    checkLayersLoaded(); // Call here after wasteContainersLayer is added
+});
 
-      const labels = Object.keys(counts);
-      const chartData = Object.values(counts);
-      const colors = labels.map(() => '#' + Math.floor(Math.random()*16777215).toString(16));
+    // Rectangle selection functionality
+    map.on('mousedown', function (e) {
+      if (ctrlPressed) {
+        startLatLng = e.latlng;
+        isDrawing = true;
+        drawnRectangle = L.rectangle([startLatLng, startLatLng], { color: "blue", weight: 1 }).addTo(map);
+        L.DomEvent.disableClickPropagation(drawnRectangle._path);
+      }
+    });
 
-      materialChart.data.labels = labels;
-      materialChart.data.datasets[0].data = chartData;
-      materialChart.data.datasets[0].backgroundColor = colors;
-      materialChart.update();
-    }
+    map.on('mousemove', function (e) {
+      if (isDrawing) {
+        const bounds = L.latLngBounds(startLatLng, e.latlng);
+        drawnRectangle.setBounds(bounds);
+      }
+    });
 
-    // Toggle sidebar visibility
-    document.getElementById("filterButton").addEventListener("click", function() {
-      const sidebar = document.getElementById("sidebar");
-      sidebar.style.display = sidebar.style.display === "none" ? "block" : "none";
+    map.on('mouseup', function (e) {
+      if (isDrawing) {
+        isDrawing = false;
+        const bounds = drawnRectangle.getBounds();
+
+        // Select features fully within the drawn area
+        zonesLayer.eachLayer(function (layer) {
+          if (bounds.contains(layer.getBounds().getNorthWest()) &&
+              bounds.contains(layer.getBounds().getNorthEast()) &&
+              bounds.contains(layer.getBounds().getSouthWest()) &&
+              bounds.contains(layer.getBounds().getSouthEast())) {
+            highlightFeature(layer);
+          }
+        });
+
+        wasteContainersLayer.eachLayer(function (layer) {
+          if (bounds.contains(layer.getLatLng())) {
+            highlightFeature(layer);
+          }
+        });
+
+        // Remove the rectangle after selection
+        map.removeLayer(drawnRectangle);
+        drawnRectangle = null;
+      }
+    });
+
+    $(document).keydown(function (e) {
+      if (e.ctrlKey) {
+        ctrlPressed = true;
+        map.dragging.disable(); // Disable dragging when Ctrl is pressed
+      }
+    });
+
+    $(document).keyup(function (e) {
+      if (e.key === "Control") {
+        ctrlPressed = false;
+        map.dragging.enable(); // Enable dragging when Ctrl is released
+      }
     });
   </script>
 </body>
+
 </html>
